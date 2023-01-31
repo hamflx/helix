@@ -15,6 +15,7 @@ use helix_vcs::DiffProviderRegistry;
 use futures_util::stream::select_all::SelectAll;
 use futures_util::{future, StreamExt};
 use helix_lsp::Call;
+use indexmap::IndexMap;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
 use std::{
@@ -803,7 +804,7 @@ pub struct Editor {
     pub mode: Mode,
     pub tree: Tree,
     pub next_document_id: DocumentId,
-    pub documents: BTreeMap<DocumentId, Document>,
+    pub documents: IndexMap<DocumentId, Document>,
 
     // We Flatten<> to resolve the inner DocumentSavedEventFuture. For that we need a stream of streams, hence the Once<>.
     // https://stackoverflow.com/a/66875668
@@ -932,7 +933,7 @@ impl Editor {
             mode: Mode::Normal,
             tree: Tree::new(area),
             next_document_id: DocumentId::default(),
-            documents: BTreeMap::new(),
+            documents: IndexMap::new(),
             saves: HashMap::new(),
             save_queue: SelectAll::new(),
             write_count: 0,
@@ -1200,6 +1201,7 @@ impl Editor {
                 }
 
                 self.replace_document_in_view(view_id, id);
+                self.move_document_to_first(id);
 
                 return;
             }
@@ -1207,6 +1209,7 @@ impl Editor {
                 let view_id = view!(self).id;
                 let doc = doc_mut!(self, &id);
                 doc.ensure_view_init(view_id);
+                self.move_document_to_first(id);
                 return;
             }
             Action::HorizontalSplit | Action::VerticalSplit => {
@@ -1228,6 +1231,8 @@ impl Editor {
                 // initialize selection for view
                 let doc = doc_mut!(self, &id);
                 doc.ensure_view_init(view_id);
+
+                self.move_document_to_first(id);
             }
         }
 
@@ -1250,6 +1255,14 @@ impl Editor {
         self.save_queue.push(stream);
 
         id
+    }
+
+    fn move_document_to_first(&mut self, id: DocumentId) {
+        if let Some(idx) = self.documents.get_index_of(&id) {
+            if idx != 0 {
+                self.documents.move_index(idx, 0);
+            }
+        }
     }
 
     fn new_file_from_document(&mut self, action: Action, doc: Document) -> DocumentId {
